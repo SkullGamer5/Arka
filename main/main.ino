@@ -7,20 +7,20 @@ phone: 09174122945
 /**************************کتابخانه ها***********************************/
 #include "config.h"  //فایل کانفیگ در کنار کد اصلی واقع شده
 #include "DHT.h"
+#include "Wire.h"
+#include "math.h"
 
 /************************شروع کد*******************************/
 
 // تعریف پین ها
 #define DHTPIN D6
 #define DHTTYPE DHT11
-#define relay1 D1
-#define relay2 D2
+#define relay1 D7
+#define relay2 D8
 #define relay3 D3
 #define relay4 D4
 #define PIR D5
 #define buzzer D0
-#define warmer D7
-#define cooler D8
 
 //متغیر های گلوبال
 int state = LOW;
@@ -32,6 +32,11 @@ bool tempcontroltrigger = false;
 float currentT = 0.0;
 float currentH = 0.0;
 int desiredT = 0;
+int roundedT = 0;
+int roundedH = 0;
+bool wantToCall = false;
+bool warmer = false;
+bool cooler = false;
 
 // اتصال فید ها به پوینتر ها
 AdafruitIO_Feed *tempf = io.feed("temperature");
@@ -68,13 +73,12 @@ void setup() {
   pinMode(relay4, OUTPUT);
   pinMode(PIR, INPUT);
   pinMode(buzzer, OUTPUT);
-  pinMode(warmer, OUTPUT);
-  pinMode(cooler, OUTPUT);
+
+  Wire.begin(4, 5);
 
   // شروع سریال (پین آر ایکس اشغال است)
-  Serial.begin(115200);
-  while (!Serial)
-    ;
+  /*Serial.begin(115200);
+  while (!Serial);*/
 
   // اتصال به آدافروت
   Serial.print("Connecting to Adafruit IO");
@@ -151,6 +155,7 @@ void loop() {
     val = digitalRead(PIR);
     if (val == HIGH) {
       digitalWrite(buzzer, HIGH);
+      wantToCall = true;
       delay(100);
 
       if (state == LOW) {
@@ -159,6 +164,7 @@ void loop() {
       }
     } else {
       digitalWrite(buzzer, LOW);
+      wantToCall = false;
       delay(200);
 
       if (state == HIGH) {
@@ -168,29 +174,32 @@ void loop() {
     }
   } else {
     digitalWrite(buzzer, LOW);
+    wantToCall = false;
   }
 
   if (tempcontroltrigger) {
 
     if (desiredT < currentT) {
-      digitalWrite(warmer, HIGH);
+      warmer = true;
       Serial.println("Warming On");
     } else {
-      digitalWrite(warmer, LOW);
+      warmer = false;
       Serial.println("Warming Off");
     }
 
     if (desiredT > currentT) {
-      digitalWrite(cooler, HIGH);
+      cooler = true;
       Serial.println("cooling On");
     } else {
-      digitalWrite(cooler, LOW);
+      cooler = false;
       Serial.println("cooling Off");
     }
-  }else{
-    digitalWrite(warmer, LOW);
-    digitalWrite(cooler, LOW);
+  } else {
+    cooler = false;
+    warmer = false;
   }
+
+  I2C();
 }
 
 void saveT() {  // ثبت دما در سرور
@@ -216,6 +225,19 @@ void readDHT() {  // تابع برای خواندن اطلاعات از سنسو
 
   currentT = t;
   currentH = h;
+  roundedT = round(currentT);
+  roundedH = round(currentH);
+}
+
+void I2C() {
+  Wire.beginTransmission(8);  // I2C address of Arduino
+  Wire.write(roundedT);
+  Wire.write(roundedH);
+  Wire.write(pirEnabled);
+  Wire.write(wantToCall);
+  Wire.write(warmer);
+  Wire.write(cooler);
+  Wire.endTransmission();
 }
 
 // تابع های زیر برای هندل کردن داده های دریافتی و ارسالی بین دستگاه و سرور هستند
